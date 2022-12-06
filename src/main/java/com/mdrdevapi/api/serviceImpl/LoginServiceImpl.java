@@ -15,7 +15,9 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 
+import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 import java.util.Random;
 import java.util.UUID;
@@ -30,7 +32,6 @@ public class LoginServiceImpl implements LoginService {
     @Override
     public ResponseEntity<?> login(LoginRequestDto loginRequestDto) throws Exception {
         AESUtil aesUtil = new AESUtil();
-        TokenEntity tokenEntity = new TokenEntity();
         List<BusinessOwnerEntity> businessOwnerEntityList = loginRepository.findBusinessOwnerByEmail(loginRequestDto.getEmail());
         LoginDto loginDto = new LoginDto();
         LoginResponseDto loginResponseDto = new LoginResponseDto();
@@ -38,43 +39,51 @@ public class LoginServiceImpl implements LoginService {
             loginDto.setFirstname(item.getFirstname());
             loginDto.setLastname(item.getLastname());
             loginDto.setEmail(item.getEmail());
-            loginDto.setPassword(item.getPassword());
+            loginDto.setPassword(aesUtil.decrypt(item.getPassword()));
             loginDto.setUsertype(item.getUsertype());
             loginDto.setId(item.getId());
+            loginDto.setIslock(item.getIslock());
+            loginDto.setIsvalid(item.getIsverified());
         });
-        if(loginRequestDto.getPassword() == aesUtil.decrypt(loginDto.getPassword())){
-            if(loginDto.getIslock() == "1"){
-                return ResponseEntity.status(HttpStatus.OK).body(controllerConstant.ACCOUNT_LOCK);
-            }else{
-                if(loginDto.getUsertype() == "3"){
-                    /* Business Owner */
-                    List<TokenEntity> tokenEntityList = tokenRepository.findTokenById(loginDto.getId());
-                    tokenEntityList.forEach(snapshot -> {
-                        loginDto.setToken(snapshot.getToken());
-                        loginDto.setIsvalid(snapshot.getIsvalid());
-                        loginDto.setLastroute(snapshot.getLastroute());
-                        loginDto.setToken(aesUtil.encrypt(snapshot.getToken()));
-                    });
-                    if(loginDto.getIsvalid() == "0"){
-                        tokenQueryBuild(loginDto);
-                        loginResponseDto.setFirstname(loginDto.getFirstname());
-                        loginResponseDto.setLastname(loginDto.getLastname());
-                        loginResponseDto.setEmail(loginDto.getEmail());
-                        loginResponseDto.setUserid(loginDto.getId());
-                        loginResponseDto.setToken(aesUtil.encrypt(loginDto.getToken()));
-                        return new ResponseEntity<>(loginResponseDto, HttpStatus.OK);
+        if(businessOwnerEntityList.isEmpty()) {
+        	return ResponseEntity.status(HttpStatus.OK).body(controllerConstant.NOT_FOUND);
+        }else {
+        	if(loginRequestDto.getPassword().equals(loginDto.getPassword())){
+                if(loginDto.getIslock().equals("1")){
+                    return ResponseEntity.status(HttpStatus.OK).body(controllerConstant.ACCOUNT_LOCK);
+                }else{
+                    if(loginDto.getUsertype().equals("3")){
+                        /* Business Owner */
+                        List<TokenEntity> tokenEntityList = tokenRepository.findTokenById(loginDto.getId());
+                        tokenEntityList.forEach(snapshot -> {
+                            loginDto.setToken(snapshot.getToken());
+                            loginDto.setIsvalid(snapshot.getIsvalid());
+                            loginDto.setLastroute("business_platform");
+                            loginDto.setUsertype("3");
+                        });
+                        if(loginDto.getIsvalid().equals("1")){
+                            tokenQueryBuild(loginDto);
+                            loginResponseDto.setFirstname(loginDto.getFirstname());
+                            loginResponseDto.setLastname(loginDto.getLastname());
+                            loginResponseDto.setEmail(loginDto.getEmail());
+                            loginResponseDto.setUserid(loginDto.getId());
+                            loginResponseDto.setToken(aesUtil.encrypt(UUID.randomUUID().toString()));
+                            loginResponseDto.setType(loginDto.getUsertype());
+                            
+                            return new ResponseEntity<>(createResponseAfterLogin(loginResponseDto), HttpStatus.OK);
+                        }
                     }
+                    else if(loginDto.getUsertype().equals("2")){}
+                    else if(loginDto.getUsertype().equals("1")){}
                 }
-                else if(loginDto.getUsertype() == "2"){}
-                else if(loginDto.getUsertype() == "1"){}
+            } else {
+                return ResponseEntity.status(HttpStatus.OK).body(controllerConstant.INVALID_PASSWORD);
             }
-        } else {
-            return ResponseEntity.status(HttpStatus.OK).body(controllerConstant.INVALID_PASSWORD);
         }
         return new ResponseEntity<>(HttpStatus.OK);
     }
-    public LoginResponseDto createResponseAfterLogin(BusinessOwnerEntity businessOwnerEntity){
-        return null;
+    public LoginResponseDto createResponseAfterLogin(LoginResponseDto loginResponseDto){
+        return loginResponseDto;
     }
     public ResponseEntity<?> tokenQueryBuild(LoginDto loginDto){
         TokenEntity tokenEntity = new TokenEntity();
@@ -83,6 +92,8 @@ public class LoginServiceImpl implements LoginService {
         tokenEntity.setLastroute(loginDto.getLastroute());
         tokenEntity.setIsdestroyed("0");
         tokenEntity.setIsvalid("1");
+        tokenEntity.setCreated_at(new Timestamp(new Date().getTime()));
+        tokenEntity.setUpdated_at(new Timestamp(new Date().getTime()));
         return new ResponseEntity<>(tokenRepository.save(tokenEntity), HttpStatus.OK);
     }
 }

@@ -8,7 +8,7 @@ import javax.persistence.Table;
 
 import lombok.Data;
 
-import java.security.Timestamp;
+import java.sql.Timestamp;
 
 @Entity
 @Table(name="restful_api_tokenization")
